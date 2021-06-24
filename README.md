@@ -9,4 +9,4 @@ Without dependencies.
 
 ```./sitemapee.py https://example.com/```
 
-```./sitemapee.py https://example.com/categiry1 category1.xml```
+```./sitemapee.py https://example.com/category1 category1.xml```
