@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Generates sitemap.xml by crawl site frim base url,
+'''Generates sitemap.xml by crawl site from base url,
 useful to split sitemaps.'''
 from configparser import ConfigParser
 from pathlib import Path
