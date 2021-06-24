@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+'''Generates sitemap.xml by crawl site frim base url,
+useful to split sitemaps.'''
 from configparser import ConfigParser
 from pathlib import Path
 import re
@@ -48,6 +50,7 @@ class Crawler:
 
 
 class SitemapGenerator:
+    DIR = Path(__file__).resolve().parent
     HEADER = '<?xml version="1.0" encoding="utf-8"?>'
     URLSET_I = (
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
@@ -57,10 +60,11 @@ class SitemapGenerator:
     URLSET_O = '</urlset>'
     def __init__(self):
         self.config = ConfigParser()
+        self.config.read(self.DIR / 'config.ini')
         self.config['*'] = {'priority': 0.5}
-        self.sitemap = Path(__file__).resolve().parent / 'sitemap.xml'
 
-    def generate(self, uris):
+    def generate(self, uris, file='sitemap.xml'):
+        self.sitemap = self.DIR / file
         config = {}
         for pattern, opts in self.config.items():
             config[pattern.replace('*', r'.+')] = opts
@@ -68,9 +72,7 @@ class SitemapGenerator:
             s.write(self.HEADER)
             s.write(self.URLSET_I)
             for uri, lastmod in uris.items():
-                print('uri:', uri)
                 for pattern, opts in config.items():
-                    print('opt:', pattern, opts)
                     if re.match(pattern, uri):
                         s.write('<url>\n')
                         s.write('   <loc>%s</loc>\n' % uri)
@@ -87,12 +89,12 @@ class SitemapGenerator:
 
 
 
-def main(uri):
+def main(uri, file):
     crawler = Crawler(uri)
     crawler.crawl()
     sitemap_generator = SitemapGenerator()
-    sitemap_generator.generate(crawler.uris)
+    sitemap_generator.generate(crawler.uris, file)
 
 
 if __name__ == '__main__':
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv)==3 else 'sitemap.xml')
