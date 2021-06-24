@@ -18,7 +18,7 @@ class Crawler:
         self.netloc_ascii = pu.netloc.encode('idna').decode('ascii')
         self.scheme = pu.scheme
 
-        self.start_uri = '%s://%s%s' % (self.scheme, self.netloc_ascii, pu.path)
+        self.start_uri = '%s://%s%s' % (self.scheme, self.netloc_ascii, pu.path or '/')
         self.root = '%s://%s' % (self.scheme, self.netloc_ascii)
 
     def normalize_uri(self, uri):
@@ -61,30 +61,33 @@ class SitemapGenerator:
     def __init__(self):
         self.config = ConfigParser()
         self.config.read(self.DIR / 'config.ini')
-        self.config['*'] = {'priority': 0.5}
+        self.config['.+'] = {'priority': 0.5}
 
-    def generate(self, uris, file='sitemap.xml'):
-        self.sitemap = self.DIR / file
-        config = {}
-        for pattern, opts in self.config.items():
-            config[pattern.replace('*', r'.+')] = opts
-        with self.sitemap.open('w') as s:
+    def generate(self, uris, file='sitemap.xml', start_uri=''):
+        sitemap = self.DIR / file
+
+        config = {
+            '%s%s' % (start_uri, p): c for p, c in self.config.items()
+        }
+
+        with sitemap.open('w') as s:
             s.write(self.HEADER)
             s.write(self.URLSET_I)
             for uri, lastmod in uris.items():
                 for pattern, opts in config.items():
-                    if re.match(pattern, uri):
-                        s.write('<url>\n')
-                        s.write('   <loc>%s</loc>\n' % uri)
-                        changefreq = opts.get('changefreq')
-                        priority = float(opts.get('priority', 0.5))
-                        if lastmod:
-                            s.write('   <lastmod>%s</lastmod>\n' % lastmod)
-                        if changefreq:
-                            s.write('   <changefreq>%s</changefreq>\n' % changefreq)
-                        s.write('   <priority>%1.1f</priority>\n' % priority)
-                        s.write('</url>\n')
-                        break
+                    if not re.match(pattern, uri):
+                        continue
+                    s.write('<url>\n')
+                    s.write('\t<loc>%s</loc>\n' % uri)
+                    changefreq = opts.get('changefreq')
+                    priority = float(opts.get('priority', '0.5'))
+                    s.write('\t<priority>%1.1f</priority>\n' % priority)
+                    if lastmod:
+                        s.write('\t<lastmod>%s</lastmod>\n' % lastmod)
+                    if changefreq:
+                        s.write('\t<changefreq>%s</changefreq>\n' % changefreq)
+                    s.write('</url>\n')
+                    break
             s.write(self.URLSET_O)
 
 
@@ -103,7 +106,7 @@ def main(uri, file):
                 sys.exit(130)
             break
     sitemap_generator = SitemapGenerator()
-    sitemap_generator.generate(crawler.uris, file)
+    sitemap_generator.generate(crawler.uris, file, crawler.start_uri)
 
 
 if __name__ == '__main__':
