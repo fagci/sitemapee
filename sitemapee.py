@@ -91,7 +91,17 @@ class SitemapGenerator:
 
 def main(uri, file):
     crawler = Crawler(uri)
-    crawler.crawl()
+    try:
+        crawler.crawl()
+    except KeyboardInterrupt:
+        while True:
+            answer = input('Save to %s? (y/n) ' % file).lower()
+            if answer not in ('y','n'):
+                print('Type y or n.')
+                continue
+            if answer == 'n':
+                sys.exit(130)
+            break
     sitemap_generator = SitemapGenerator()
     sitemap_generator.generate(crawler.uris, file)
 
