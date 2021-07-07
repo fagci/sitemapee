@@ -44,9 +44,10 @@ class Crawler:
     def notpassed(self, uri):
         return uri and uri not in self.uris
 
-    def crawl(self, uri=None):
-        self._crawl(uri)
+    def crawl(self):
+        self.queue.put(self.start_uri)
         self.run_event.set()
+
         try:
             for t in self.threads:
                 t.daemon = True
@@ -61,13 +62,8 @@ class Crawler:
             for t in self.threads:
                 t.join()
 
-            print('Interrupted.')
+            print('Interrupted.', file=sys.stderr)
             raise
-
-    def _crawl(self, uri=None):
-        if not uri:
-            uri = self.start_uri
-        self.queue.put(uri)
 
     def __crawl(self):
         while self.run_event.is_set():
@@ -132,8 +128,8 @@ class SitemapGenerator:
             s.write(self.URLSET_O)
 
 
-def main(uri, sitemap_file):
-    crawler = Crawler(uri)
+def main(uri, sitemap_file, w=4):
+    crawler = Crawler(uri, w)
     try:
         crawler.crawl()
     except KeyboardInterrupt:
@@ -150,4 +146,7 @@ def main(uri, sitemap_file):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else 'sitemap.xml')
+    main(
+        sys.argv[1],
+        sys.argv[2] if len(sys.argv) == 3 else 'sitemap.xml'
+    )
