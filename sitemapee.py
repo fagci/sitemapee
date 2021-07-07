@@ -6,7 +6,7 @@ from pathlib import Path
 from queue import Queue
 import re
 import sys
-from threading import Lock, Thread
+from threading import Lock, Thread, Event
 from time import sleep
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -28,6 +28,8 @@ class Crawler:
 
         self.queue = Queue()
         self.lock = Lock()
+        self.run_event = Event()
+
         self.threads = [Thread(target=self.__crawl) for _ in range(workers)]
 
     def normalize_uri(self, uri):
@@ -45,12 +47,23 @@ class Crawler:
 
     def crawl(self, uri=None):
         self._crawl(uri)
+        self.run_event.set()
+        try:
+            for t in self.threads:
+                t.daemon = True
+                t.start()
 
-        for t in self.threads:
-            t.daemon = True
-            t.start()
+            self.queue.join()
 
-        self.queue.join()
+        except KeyboardInterrupt:
+            self.queue.queue.clear()
+            self.run_event.clear()
+            
+            for t in self.threads:
+                t.join()
+
+            print('Interrupted.')
+            raise
 
     def _crawl(self, uri=None):
         if not uri:
@@ -58,7 +71,7 @@ class Crawler:
         self.queue.put(uri)
 
     def __crawl(self):
-        while True:
+        while self.run_event.is_set():
             uri = self.queue.get()
             if self.notpassed(self.normalize_uri(uri)):
                 with urlopen(uri) as r:
