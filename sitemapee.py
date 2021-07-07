@@ -3,16 +3,18 @@
 useful to split sitemaps.'''
 from configparser import ConfigParser
 from pathlib import Path
+from queue import Queue
 import re
 import sys
+from threading import Lock, Thread, Event
+from time import sleep
 from urllib.parse import urlparse
 from urllib.request import urlopen
-
 
 class Crawler:
     A_RE = re.compile(r'<a.*href=\W?(.+?)[\'">\s]')
 
-    def __init__(self, uri):
+    def __init__(self, uri, workers = 4):
         pu = urlparse(uri)
 
         self.uris = {}
@@ -23,6 +25,12 @@ class Crawler:
 
         self.root = '%s://%s' % (self.scheme, self.netloc_ascii)
         self.start_uri = '%s%s' % (self.root, pu.path or '/')
+
+        self.queue = Queue()
+        self.lock = Lock()
+        self.run_event = Event()
+
+        self.threads = [Thread(target=self.__crawl) for _ in range(workers)]
 
     def normalize_uri(self, uri):
         if uri.startswith('//'):
@@ -38,18 +46,47 @@ class Crawler:
         return uri and uri not in self.uris
 
     def crawl(self, uri=None):
+        self._crawl(uri)
+        self.run_event.set()
+        try:
+            for t in self.threads:
+                t.daemon = True
+                t.start()
+
+            self.queue.join()
+
+        except KeyboardInterrupt:
+            self.queue.queue.clear()
+            self.run_event.clear()
+            
+            for t in self.threads:
+                t.join()
+
+            print('Interrupted.')
+            raise
+
+    def _crawl(self, uri=None):
         if not uri:
             uri = self.start_uri
-        print(uri)
+        self.queue.put(uri)
 
-        with urlopen(uri) as r:
-            self.uris[uri] = r.headers.get('Last-Modified')
-            html = r.read().decode()
-            unique_links = set(self.A_RE.findall(html))
+    def __crawl(self):
+        while self.run_event.is_set():
+            uri = self.queue.get()
+            if self.notpassed(self.normalize_uri(uri)):
+                with urlopen(uri) as r:
+                    with self.lock:
+                        print(uri)
+                        self.uris[uri] = r.headers.get('Last-Modified')
+                    html = r.read().decode()
+                    unique_links = set(self.A_RE.findall(html))
 
-            normalized_uris = map(self.normalize_uri, unique_links)
-            for u in filter(self.notpassed, normalized_uris):
-                self.crawl(u)
+                    normalized_uris = map(self.normalize_uri, unique_links)
+                    with self.lock:
+                        for u in filter(self.notpassed, normalized_uris):
+                            self.queue.put(u)
+
+            self.queue.task_done()
 
 
 class SitemapGenerator:
@@ -96,13 +133,13 @@ class SitemapGenerator:
             s.write(self.URLSET_O)
 
 
-def main(uri, file):
+def main(uri, sitemap_file):
     crawler = Crawler(uri)
     try:
         crawler.crawl()
     except KeyboardInterrupt:
         while True:
-            answer = input('Save to %s? (y/n) ' % file).lower()
+            answer = input('Save to %s? (y/n) ' % sitemap_file).lower()
             if answer not in ('y', 'n'):
                 print('Type y or n.')
                 continue
@@ -110,7 +147,7 @@ def main(uri, file):
                 sys.exit(130)
             break
     sitemap_generator = SitemapGenerator()
-    sitemap_generator.generate(crawler.uris, file, crawler.start_uri)
+    sitemap_generator.generate(crawler.uris, sitemap_file, crawler.start_uri)
 
 
 if __name__ == '__main__':
