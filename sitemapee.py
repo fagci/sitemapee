@@ -7,7 +7,6 @@ from queue import Queue
 import re
 import sys
 from threading import Lock, Thread, Event
-from time import sleep
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
