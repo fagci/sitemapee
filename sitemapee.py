@@ -9,6 +9,7 @@ import sys
 from threading import Lock, Thread, Event
 from urllib.parse import urlparse
 from urllib.request import urlopen
+from argparse import ArgumentParser
 
 
 class Crawler:
@@ -141,6 +142,7 @@ class SitemapGenerator:
 
 
 def main(uri, sitemap_file, w=4):
+
     crawler = Crawler(uri, w)
     try:
         crawler.crawl()
@@ -158,4 +160,9 @@ def main(uri, sitemap_file, w=4):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else 'sitemap.xml')
+    argparser = ArgumentParser(description='SitemapGenerator')
+    argparser.add_argument('uri', help='Root uri to parse from and constrain to')
+    argparser.add_argument('-o', default='sitemap.xml', help='Output sitemap xml file')
+    argparser.add_argument('-w', default=4, type=int, help='Workers count')
+    args = argparser.parse_args()
+    main(args.uri, args.o, args.w)
