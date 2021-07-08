@@ -12,7 +12,7 @@ class Crawler:
     def __init__(self, uri, workers=4):
         pu = urlparse(uri)
 
-        self.uris = {}
+        self.__uris = {}
 
         self.scheme = pu.scheme
         self.netloc = pu.netloc
@@ -30,6 +30,7 @@ class Crawler:
         ]
 
     def crawl(self):
+        """Start crawl process"""
         self.__schedule(self.start_uri)
         self.run_event.set()
 
@@ -49,9 +50,15 @@ class Crawler:
             print('Interrupted.', file=sys.stderr)
             raise
 
+    @property
+    def uris(self):
+        # TODO: deny mutations
+        return self.__uris
+
     def has(self, uri):
+        """Check if url has in crawled urlset"""
         with self.lock:
-            return uri in self.uris
+            return uri in self.__uris
 
     def is_our(self, uri):
         return uri.startswith(self.start_uri) or uri.startswith('/')
@@ -85,12 +92,15 @@ class Crawler:
 
     def __process(self, uri):
         with urlopen(uri) as response:
-            with self.lock:
-                self.uris[uri] = response.headers.get('Last-Modified')
+            self.__add(uri, response.headers.get('Last-Modified'))
             print(uri)
 
             self.__schedule_crawl(response.read().decode())
 
+    def __add(self, uri, data = ''):
+        with self.lock:
+            self.__uris[uri] = data 
+
     def __schedule(self, uri):
-        self.uris[uri] = ''
+        self.__add(uri)
         self.queue.put_nowait(uri)
