@@ -11,6 +11,8 @@ from threading import Event, Lock, Thread
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+# TODO: deal with robots.txt
+
 
 class Crawler:
     A_RE = re.compile(r"""<a[^>]+href=['"]([^'"]+)['"]""", re.IGNORECASE)
@@ -55,14 +57,28 @@ class Crawler:
             print('Interrupted.', file=sys.stderr)
             raise
 
+    def has(self, uri):
+        with self.lock:
+            return uri in self.uris
+
+    def is_our(self, uri):
+        return uri.startswith(self.start_uri) or uri.startswith('/')
+
+    def normalize(self, uri):
+        if uri.startswith('//'):
+            uri = '%s:%s' % (self.scheme, uri)
+        elif uri.startswith('/'):
+            uri = '%s%s' % (self.root, uri)
+        # TODO: deal with ./target/path and target/path
+        return uri
+
     def __schedule_crawl(self, html):
         unique_uris = set(self.A_RE.findall(html))
-        our_unique_uris = filter(self.__our, unique_uris)
+        our_unique_uris = filter(self.is_our, unique_uris)
 
-        for new_uri in map(self.__normalize, our_unique_uris):
-            with self.lock:
-                if new_uri not in self.uris:
-                    self.__schedule(new_uri)
+        for new_uri in map(self.normalize, our_unique_uris):
+            if not self.has(new_uri):
+                self.__schedule(new_uri)
 
     def __worker(self):
         while self.run_event.is_set():
@@ -86,17 +102,6 @@ class Crawler:
     def __schedule(self, uri):
         self.uris[uri] = ''
         self.queue.put_nowait(uri)
-
-    def __normalize(self, uri):
-        if uri.startswith('//'):
-            return '%s:%s' % (self.scheme, uri)
-        if uri.startswith('/'):
-            return '%s%s' % (self.root, uri)
-        return uri
-
-    def __our(self, uri):
-        if uri.startswith(self.start_uri) or uri.startswith('/'):
-            return uri
 
 
 class SitemapGenerator:
