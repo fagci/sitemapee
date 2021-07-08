@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 class Crawler:
-    A_RE = re.compile(r'<a.*href=\W?(.+?)[\'">\s]')
+    A_RE = re.compile(r'<a.+?href=\W?((?:http|/)[^\'">\s]+?)[\'">\s]')
 
     def __init__(self, uri, workers = 4):
         pu = urlparse(uri)
@@ -69,17 +69,20 @@ class Crawler:
         while self.run_event.is_set():
             uri = self.queue.get()
             if self.notpassed(self.normalize_uri(uri)):
-                with urlopen(uri) as r:
-                    with self.lock:
-                        print(uri)
-                        self.uris[uri] = r.headers.get('Last-Modified')
-                    html = r.read().decode()
-                    unique_links = set(self.A_RE.findall(html))
+                try:
+                    with urlopen(uri) as r:
+                        with self.lock:
+                            print(uri)
+                            self.uris[uri] = r.headers.get('Last-Modified')
+                        html = r.read().decode()
+                        unique_links = set(self.A_RE.findall(html))
+                        normalized_uris = map(self.normalize_uri, unique_links)
 
-                    normalized_uris = map(self.normalize_uri, unique_links)
-                    with self.lock:
-                        for u in filter(self.notpassed, normalized_uris):
-                            self.queue.put(u)
+                        with self.lock:
+                            for u in filter(self.notpassed, normalized_uris):
+                                self.queue.put(u)
+                except Exception as e:
+                    print('[E]', uri, repr(e), file=sys.stderr)
 
             self.queue.task_done()
 
