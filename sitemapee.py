@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 class Crawler:
-    A_RE = re.compile(r'<a.+?href=\W?((?:http|/)[^\'">\s]+?)[\'">\s]')
+    A_RE = re.compile(r"""<a[^>]+href=['"]([^'"]+)['"]""")
 
     def __init__(self, uri, workers = 4):
         pu = urlparse(uri)
@@ -29,28 +29,34 @@ class Crawler:
         self.lock = Lock()
         self.run_event = Event()
 
-        self.threads = [Thread(target=self.__crawl) for _ in range(workers)]
+        self.threads = [Thread(target=self.__crawl, daemon=True) for _ in range(workers)]
+
 
     def normalize_uri(self, uri):
         if uri.startswith('//'):
-            uri = '%s:%s' % (self.scheme, uri)
-        elif uri.startswith('/'):
-            uri = '%s%s' % (self.root, uri)
-        elif not uri.startswith(self.start_uri):
-            return None
-
+            return '%s:%s' % (self.scheme, uri)
+        if uri.startswith('/'):
+            return '%s%s' % (self.root, uri)
         return uri
 
-    def notpassed(self, uri):
-        return uri and uri not in self.uris
+    def has(self, uri):
+        with self.lock:
+            return uri and uri in self.uris
+
+    def put(self, uri, data=''):
+        if self.has(uri):
+            return
+        with self.lock:
+            self.queue.put(uri)
+            self.uris[uri] = data
+            print(uri)
 
     def crawl(self):
-        self.queue.put(self.start_uri)
+        self.put(self.start_uri)
         self.run_event.set()
 
         try:
             for t in self.threads:
-                t.daemon = True
                 t.start()
 
             self.queue.join()
@@ -65,24 +71,25 @@ class Crawler:
             print('Interrupted.', file=sys.stderr)
             raise
 
+    def _site_link(self, uri):
+        if uri.startswith(self.start_uri) or uri.startswith('/'):
+            return uri
+
     def __crawl(self):
         while self.run_event.is_set():
             uri = self.queue.get()
-            if self.notpassed(self.normalize_uri(uri)):
-                try:
-                    with urlopen(uri) as r:
-                        with self.lock:
-                            print(uri)
-                            self.uris[uri] = r.headers.get('Last-Modified')
-                        html = r.read().decode()
-                        unique_links = set(self.A_RE.findall(html))
-                        normalized_uris = map(self.normalize_uri, unique_links)
 
-                        with self.lock:
-                            for u in filter(self.notpassed, normalized_uris):
-                                self.queue.put(u)
-                except Exception as e:
-                    print('[E]', uri, repr(e), file=sys.stderr)
+            try:
+                with urlopen(uri) as r:
+                    # TODO: improve
+                    self.uris[uri] = r.headers.get('Last-Modified')
+                    html = r.read().decode()
+                    unique_links = filter(self._site_link, set(self.A_RE.findall(html)))
+
+                    for u in map(self.normalize_uri, unique_links):
+                        self.put(u)
+            except Exception as e:
+                print('[E]', uri, repr(e), file=sys.stderr)
 
             self.queue.task_done()
 
