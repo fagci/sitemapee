@@ -10,10 +10,11 @@ from threading import Lock, Thread, Event
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
-class Crawler:
-    A_RE = re.compile(r"""<a[^>]+href=['"]([^'"]+)['"]""")
 
-    def __init__(self, uri, workers = 4):
+class Crawler:
+    A_RE = re.compile(r"""<a[^>]+href=['"]([^'"]+)['"]""", re.IGNORECASE)
+
+    def __init__(self, uri, workers=4):
         pu = urlparse(uri)
 
         self.uris = {}
@@ -29,30 +30,12 @@ class Crawler:
         self.lock = Lock()
         self.run_event = Event()
 
-        self.threads = [Thread(target=self.__crawl, daemon=True) for _ in range(workers)]
-
-
-    def normalize_uri(self, uri):
-        if uri.startswith('//'):
-            return '%s:%s' % (self.scheme, uri)
-        if uri.startswith('/'):
-            return '%s%s' % (self.root, uri)
-        return uri
-
-    def has(self, uri):
-        with self.lock:
-            return uri and uri in self.uris
-
-    def put(self, uri, data=''):
-        if self.has(uri):
-            return
-        with self.lock:
-            self.queue.put(uri)
-            self.uris[uri] = data
-            print(uri)
+        self.threads = [
+            Thread(target=self.__worker, daemon=True) for _ in range(workers)
+        ]
 
     def crawl(self):
-        self.put(self.start_uri)
+        self.__schedule(self.start_uri)
         self.run_event.set()
 
         try:
@@ -64,34 +47,55 @@ class Crawler:
         except KeyboardInterrupt:
             self.queue.queue.clear()
             self.run_event.clear()
-            
+
             for t in self.threads:
                 t.join()
 
             print('Interrupted.', file=sys.stderr)
             raise
 
-    def _site_link(self, uri):
-        if uri.startswith(self.start_uri) or uri.startswith('/'):
-            return uri
+    def __schedule_crawl(self, html):
+        unique_uris = set(self.A_RE.findall(html))
+        our_unique_uris = filter(self.__our, unique_uris)
 
-    def __crawl(self):
+        for new_uri in map(self.__normalize, our_unique_uris):
+            with self.lock:
+                if new_uri not in self.uris:
+                    self.__schedule(new_uri)
+
+    def __worker(self):
         while self.run_event.is_set():
             uri = self.queue.get()
 
             try:
-                with urlopen(uri) as r:
-                    # TODO: improve
-                    self.uris[uri] = r.headers.get('Last-Modified')
-                    html = r.read().decode()
-                    unique_links = filter(self._site_link, set(self.A_RE.findall(html)))
-
-                    for u in map(self.normalize_uri, unique_links):
-                        self.put(u)
+                self.__process(uri)
             except Exception as e:
                 print('[E]', uri, repr(e), file=sys.stderr)
 
             self.queue.task_done()
+
+    def __process(self, uri):
+        with urlopen(uri) as response:
+            with self.lock:
+                self.uris[uri] = response.headers.get('Last-Modified')
+            print(uri)
+
+            self.__schedule_crawl(response.read().decode())
+
+    def __schedule(self, uri):
+        self.uris[uri] = ''
+        self.queue.put_nowait(uri)
+
+    def __normalize(self, uri):
+        if uri.startswith('//'):
+            return '%s:%s' % (self.scheme, uri)
+        if uri.startswith('/'):
+            return '%s%s' % (self.root, uri)
+        return uri
+
+    def __our(self, uri):
+        if uri.startswith(self.start_uri) or uri.startswith('/'):
+            return uri
 
 
 class SitemapGenerator:
@@ -110,9 +114,7 @@ class SitemapGenerator:
     def generate(self, uris, file='sitemap.xml', start_uri=''):
         sitemap = self.DIR / file
 
-        config = {
-            '%s%s' % (start_uri, p): c for p, c in self.config.items()
-        }
+        config = {'%s%s' % (start_uri, p): c for p, c in self.config.items()}
 
         with sitemap.open('w') as s:
             s.write(self.HEADER)
@@ -156,7 +158,4 @@ def main(uri, sitemap_file, w=4):
 
 
 if __name__ == '__main__':
-    main(
-        sys.argv[1],
-        sys.argv[2] if len(sys.argv) == 3 else 'sitemap.xml'
-    )
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else 'sitemap.xml')
