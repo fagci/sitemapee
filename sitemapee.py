@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 '''Generates sitemap.xml by crawl site from base url,
 useful to split sitemaps.'''
+from argparse import ArgumentParser
 from configparser import ConfigParser
 from pathlib import Path
 from queue import Queue
 import re
 import sys
-from threading import Lock, Thread, Event
+from threading import Event, Lock, Thread
 from urllib.parse import urlparse
 from urllib.request import urlopen
-from argparse import ArgumentParser
 
 
 class Crawler:
@@ -142,8 +142,8 @@ class SitemapGenerator:
 
 
 def main(uri, sitemap_file, w=4):
-
     crawler = Crawler(uri, w)
+
     try:
         crawler.crawl()
     except KeyboardInterrupt:
@@ -155,14 +155,15 @@ def main(uri, sitemap_file, w=4):
             if answer == 'n':
                 sys.exit(130)
             break
+
     sitemap_generator = SitemapGenerator()
     sitemap_generator.generate(crawler.uris, sitemap_file, crawler.start_uri)
 
 
 if __name__ == '__main__':
-    argparser = ArgumentParser(description='SitemapGenerator')
-    argparser.add_argument('uri', help='Root uri to parse from and constrain to')
-    argparser.add_argument('-o', default='sitemap.xml', help='Output sitemap xml file')
-    argparser.add_argument('-w', default=4, type=int, help='Workers count')
-    args = argparser.parse_args()
+    ap = ArgumentParser(description='SitemapGenerator')
+    ap.add_argument('uri', help='Root uri to parse from and constrain to')
+    ap.add_argument('-o', default='sitemap.xml', help='Output xml file')
+    ap.add_argument('-w', default=4, type=int, help='Workers count')
+    args = ap.parse_args()
     main(args.uri, args.o, args.w)
