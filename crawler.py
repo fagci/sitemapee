@@ -1,14 +1,12 @@
 from queue import Queue
-import re
 import sys
 from threading import Event, Lock, Thread
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+from a_parser import AParser
 
 class Crawler:
-    A_RE = re.compile(r"""<a[^>]+href=['"]([^'"]+)['"]""", re.IGNORECASE)
-
     def __init__(self, uri, workers=4):
         pu = urlparse(uri)
 
@@ -72,7 +70,9 @@ class Crawler:
         return uri
 
     def __schedule_crawl(self, html):
-        unique_uris = set(self.A_RE.findall(html))
+        parser = AParser()
+        parser.feed(html)
+        unique_uris = set(parser.hrefs)
         our_unique_uris = filter(self.is_our, unique_uris)
 
         for new_uri in map(self.normalize, our_unique_uris):
